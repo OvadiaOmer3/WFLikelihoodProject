@@ -8,6 +8,11 @@ from sklearn.model_selection import train_test_split
 import os
 import datetime
 import argparse
+import pickle
+
+RESULTS_FOLDER = "Results"
+SAMPLES_FOLDER = "Samples"
+
 
 
 def generate_2features_X_by_ranges(n_samples, x_1_range, x_2_range):
@@ -49,23 +54,33 @@ Create bitmap.
 X: 2D array of shape (n_samples, 2)
 y: 1D array of shape (n_samples)
 
-DO NOT Create 3d plot, instead express the depth of y as a color in a 2D plot.
+Use plt.pcolormesh to create a bitmap of the data.
 """
-def create_bitmap(X, y, y_prediction, filename):
-    fig = plt.figure()
-    ax = fig.add_subplot(111)
-
-    # Calculate data ranges
+def create_colormap(X, y, model, filename):
     x_min, x_max = X[:, 0].min(), X[:, 0].max()
     y_min, y_max = X[:, 1].min(), X[:, 1].max()
 
-    # Set plot limits
-    ax.set_xlim(x_min, x_max)
-    ax.set_ylim(y_min, y_max)
+    # Create a grid of points
+    xx, yy = np.meshgrid(np.linspace(x_min, x_max, 100), np.linspace(y_min, y_max, 100))
+    points = np.c_[xx.ravel(), yy.ravel()]
 
-    # Create a scatter plot with color representing the depth of y
-    sc = ax.scatter(X[:, 0], X[:, 1], c=y, cmap='viridis')
-    plt.colorbar(sc)
+    best_idx = model.equations_.score.idxmax()
+
+    # Predict
+    zz = model.predict(points, index=best_idx)
+
+    # Reshape to 2D
+    zz = zz.reshape(xx.shape)
+
+    # Create bitmap
+    plt.pcolormesh(xx, yy, zz, cmap='viridis')
+    plt.scatter(X[:, 0], X[:, 1], c=y, cmap='viridis')
+    plt.colorbar()
+
+    # Add title and Labels
+    plt.title("Colormap of the best equation")
+    plt.xlabel("x1")
+    plt.ylabel("x2")
 
     plt.savefig(filename)
 
@@ -98,18 +113,21 @@ def learn_2d_x(X, y, should_show=True, should_save_gif=False, filename="", shoul
 
     model.fit(X, y)
 
-    # Find the best equation
-    best_idx = model.equations_.query(
-            f"loss < {2 * model.equations_.loss.min()}"
-        ).score.idxmax()
+    # # Find the best equation by loss
+    # best_idx = model.equations_.query(
+    #         f"loss < {2 * model.equations_.loss.min()}"
+    #     ).score.idxmax()
+    
+    # Find the best equation by score
+    best_idx = model.equations_.score.idxmax()
+
     print("\n")
-    print("Best equation:")
+    print("Best equation (by score):")
     print(model.sympy(best_idx))
     print("Loss: {}".format(model.equations_.loss.min()))
     print("Avg. Loss: {}\n".format(model.equations_.loss.min()/len(y_test)))
 
     # Plot the best equation (3d plot) 
-    y_prediction = model.predict(X_test, index=best_idx)
     # if should_show:
     #     fig = plt.figure()
     #     ax = fig.add_subplot(111, projection='3d')
@@ -117,19 +135,21 @@ def learn_2d_x(X, y, should_show=True, should_save_gif=False, filename="", shoul
     #     ax.scatter(X_test[:, 0], X_test[:, 1], y_prediction, color="red")
     #     plt.show()
 
-    if should_save_gif or should_show:
-        filename = "out.gif" if filename=="" else filename
-        filename_no_ext, ext = os.path.splitext(filename)
-        filename = filename_no_ext + "_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".gif"
-        create_3d_graph(X_test, y_test, y_prediction, filename=os.path.join(out_path, filename), should_show=should_show, should_save=should_save_gif)
-    
-    if should_dump_to_file:
-        # dump X_test, y_test, y_prediction to a file
-        np.save(os.path.join(out_path, "X_test.npy"), X_test)
-        np.save(os.path.join(out_path, "y_test.npy"), y_test)
-        np.save(os.path.join(out_path, "y_prediction.npy"), y_prediction)
-        print("Dumped X_test, y_test, y_prediction to files")
-    
+    if any([should_show, should_save_gif, should_dump_to_file]):
+        y_prediction = model.predict(X_test, index=best_idx)
+        if should_save_gif or should_show:
+            filename = "out.gif" if filename=="" else filename
+            filename_no_ext, ext = os.path.splitext(filename)
+            filename = filename_no_ext + "_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".gif"
+            create_3d_graph(X_test, y_test, y_prediction, filename=os.path.join(out_path, filename), should_show=should_show, should_save=should_save_gif)
+        
+        if should_dump_to_file:
+            # dump X_test, y_test, y_prediction to a file
+            np.save(os.path.join(out_path, "X_test.npy"), X_test)
+            np.save(os.path.join(out_path, "y_test.npy"), y_test)
+            np.save(os.path.join(out_path, "y_prediction.npy"), y_prediction)
+            print("Dumped X_test, y_test, y_prediction to files")
+        
     return model, X_test, y_test, y_prediction
 
 
@@ -141,16 +161,18 @@ df second column: x2
 df values: y
 """
 def load_data_from_csv(filename):
-    df = pd.read_csv(filename)
-    # reshape so that X is (rows * columns)X2 and y is 1D (y = df[x1, x2])
-    melted = pd.melt(df, id_vars=df.columns[0], var_name='x_1', value_name='f(x_1,x_2)')
+    df = pd.read_csv(filename, index_col=0)
+    # # reshape so that X is (rows * columns)X2 and y is 1D (y = df[x1, x2])
+    # melted = pd.melt(df, id_vars=df.columns[0], var_name='x_1', value_name='f(x_1,x_2)')
 
     # Rename the index column to 'x_2'
-    melted.rename(columns={df.columns[0]: 'x_2'}, inplace=True)
+    df.rename(columns={df.columns[0]: 'x_2'}, inplace=True)
+    df.rename(columns={df.columns[1]: 'x_1'}, inplace=True)
+    df.rename(columns={df.columns[2]: 'f(x_1,x_2)'}, inplace=True)
 
     # Extract numpy arrays
-    x_combinations = melted[['x_1', 'x_2']].to_numpy()  # Shape: [num_combinations, 2]
-    f_combinations = melted['f(x_1,x_2)'].to_numpy()    # Shape: [num_combinations]
+    x_combinations = df[['x_1', 'x_2']].to_numpy()  # Shape: [num_combinations, 2]
+    f_combinations = df['f(x_1,x_2)'].to_numpy()    # Shape: [num_combinations]
 
     return x_combinations, f_combinations
 
@@ -223,7 +245,8 @@ def parse_args():
     parser.add_argument("--should_save_gif", action="store_true", help="Save 3D plot of the best equation to a gif")
     parser.add_argument("--should_dump_to_file", action="store_true", help="Dump X_test, y_test, y_prediction to files")
     parser.add_argument("--output_filename", type=str, default="", help="Output filename for the gif")
-    parser.add_argument("--should_plot_old_results", action="store_true", help="Plot old results from files")
+    parser.add_argument("--gif_from_old", action="store_true", help="Plot old results from files")
+    parser.add_argument("--colormap_from_old", action="store_true", help="Plot old results from files")
     parser.add_argument("--old_results_path", type=str, default="", help="Path to old results files")
     args = parser.parse_args()
     return args
@@ -235,9 +258,11 @@ def main():
     args = parse_args()
 
     filename = args.filename
-    if args.should_plot_old_results:
+    if args.gif_from_old:
         fix_3d_graph(old_results_path=args.old_results_path, should_show=args.should_show, should_save=args.should_save_gif)
         return
+    elif args.colormap_from_old:
+        create_colormap_from_old_results(old_results_path=args.old_results_path)
     else:
         X, y = load_data_from_csv(filename)
         # model, X_test, y_test, y_prediction = learn_2d_x(X,
@@ -247,10 +272,10 @@ def main():
         #                                              filename="loglik_grid_-1_-5.gif",
         #                                              should_dump_to_file=True,
         #                                              )
-        out_path, ext = os.path.splitext(filename)
-        out_path = "out" if out_path=="" else out_path
+        test_name, ext = os.path.splitext(filename)
+        test_name = "output" if test_name=="" else test_name
         test_time = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        out_path = out_path + "_" + test_time
+        out_path = (test_name + "_" + test_time).replace(SAMPLES_FOLDER, RESULTS_FOLDER)
         
         os.makedirs(out_path, exist_ok=False)
 
@@ -268,8 +293,12 @@ def main():
         report_filename = os.path.join(out_path ,"REPORT_" + test_time + ".txt")
         with open(report_filename, "w") as f:
             f.write(report)
+        
+        pickle.dump(model, open(os.path.join(out_path, "model" + ".pkl"), "wb"))
 
         model.equations_.to_csv(os.path.join(out_path, "equations_" + test_time + ".csv"))
+
+        create_colormap(X_test, y_test, model, filename=os.path.join(out_path, "colormap" + ".png"))
 
 
 def fix_3d_graph(old_results_path="", should_show=False, should_save=True):
@@ -278,8 +307,12 @@ def fix_3d_graph(old_results_path="", should_show=False, should_save=True):
     filename_no_ext, ext = os.path.splitext(filename)
     filename = filename_no_ext + "_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".gif"
     create_3d_graph(X_test, y_test, y_prediction, filename=filename, should_show=should_show, should_save=should_save)
-    # filename = filename_no_ext + "_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".png"
-    # create_bitmap(X_test, y_test, y_prediction, filename=filename)
+
+def create_colormap_from_old_results(old_results_path=""):
+    X_test, y_test, y_prediction = load_results_from_csv(old_results_path)
+    model = pickle.load(open(os.path.join(old_results_path, "model.pkl"), "rb"))
+    filename = os.path.join(old_results_path, "colormap.png" + "_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".png")
+    create_colormap(X_test, y_test, model, filename=filename)
 
 
 if __name__ == "__main__":
