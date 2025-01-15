@@ -44,7 +44,7 @@ def learn_1d_x(X,y, out_path):
         # elementwise_loss="L1DistLoss()",
         temp_equation_file=True,
         delete_tempfiles=False,
-        verbosity=0,
+        # verbosity=0,
 
     )
 
@@ -69,7 +69,7 @@ def learn_1d_x(X,y, out_path):
     # grid_search.fit(X, y)
     # model = grid_search.best_estimator_
 
-    # model.fit(X, y)
+    model.fit(X, y)
     
 
     y_test = y
