@@ -2,8 +2,6 @@ import optuna
 import numpy as np
 from pysr import PySRRegressor
 from sklearn.model_selection import cross_val_score
-import os
-import sys
 import pickle
 
 import datetime
@@ -89,7 +87,7 @@ def objective(trial: optuna.Trial) -> float:
 
 # Create a study and optimize the objective function
 study = optuna.create_study(direction="minimize")
-study.optimize(objective, n_trials=1, show_progress_bar=True)
+study.optimize(objective, n_trials=100, show_progress_bar=True, n_jobs=-1)
 
 # Print the best trial
 print("Best trial:")
@@ -102,4 +100,5 @@ for key, value in trial.params.items():
 
 # Save the best model
 best_model = models[study.best_trial.number]
-pickle.dumps(best_model, open("best_model_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".pkl", "wb"))
+with open("best_model_" + datetime.datetime.now().strftime("%Y%m%d_%H%M%S") + ".pkl", "wb") as f:
+    pickle.dump(best_model, f)
