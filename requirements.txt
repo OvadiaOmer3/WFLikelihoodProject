@@ -1,0 +1,4 @@
+optuna==4.1.0
+pandas==2.2.3
+pysr==0.19.4
+scikit-learn==1.5.1
